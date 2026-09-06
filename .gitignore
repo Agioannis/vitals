@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Third-party binaries — download per README, don't commit
+lib/*.dll
+!lib/.gitkeep
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
