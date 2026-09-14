@@ -762,7 +762,7 @@ class SystemPage(Page):
         info.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self._info: Dict[str, tk.StringVar] = {}
         rows = ["Processor", "Graphics", "Motherboard", "Operating system",
-                "Python", "Uptime", "Processes", "Sensor backend"]
+                "Python", "Uptime", "Processes", "Sensor backend", "CPU affinity"]
         for i, name in enumerate(rows):
             ctk.CTkLabel(info, text=name, font=FONTS["label"], text_color=C["muted"],
                          anchor="w", width=140).grid(row=i + 1, column=0, sticky="w",
@@ -799,6 +799,8 @@ class SystemPage(Page):
             "Uptime": fmt_uptime(s.val("sys.uptime")),
             "Processes": s.meta.get("proc.count", "—"),
             "Sensor backend": self.app.sampler.backend_note,
+            "CPU affinity": (f"pinned to core {self.app.pinned_core} (least busy at launch)"
+                             if self.app.pinned_core is not None else "not pinned"),
         }
         for k, v in vals.items():
             if self._info[k].get() != v:

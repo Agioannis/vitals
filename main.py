@@ -14,9 +14,11 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from sensors import Sampler, is_admin
+from sensors import Sampler, is_admin, pin_to_idle_core
 from ui import (C, FONTS, CpuPage, GpuPage, MemoryPage, NetworkPage, OverviewPage,
                 StoragePage, SystemPage, band_temp, build_fonts)
+
+__version__ = "1.0.0"
 
 IDLE_INTERVAL = 5.0  # seconds, while minimised
 
@@ -24,7 +26,7 @@ IDLE_INTERVAL = 5.0  # seconds, while minimised
 class HWMonitor(ctk.CTk):
     def __init__(self, interval: float = 1.0):
         super().__init__()
-        self.title("Vitals — hardware monitor")
+        self.title(f"Vitals — hardware monitor  v{__version__}")
         self.geometry("1180x720")
         self.minsize(980, 600)
         self.configure(fg_color=C["bg"])
@@ -34,6 +36,8 @@ class HWMonitor(ctk.CTk):
         self.paused = False
         self._last_snap = None
         self._minimised = False
+
+        self.pinned_core = pin_to_idle_core()
 
         self.sampler = Sampler(interval=interval)
         self.sampler.start()
@@ -211,6 +215,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Vitals — lightweight hardware monitor")
     p.add_argument("--interval", type=float, default=1.0,
                    help="seconds between samples (default 1.0)")
+    p.add_argument("--version", action="version", version=f"Vitals {__version__}")
     return p.parse_args()
 
 

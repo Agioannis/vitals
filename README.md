@@ -9,14 +9,22 @@ ui.py         pages, cards, canvas sparklines, formatting
 sensors.py    backends (psutil + LibreHardwareMonitor) and the sampler thread
 ```
 
-## Install
+## Get it
+
+**Prebuilt (Windows, no Python needed):** grab the latest zip from
+[Releases](../../releases), unzip, and run `Vitals.exe` — it needs the
+`_internal` folder next to it. Right-click → Run as administrator for full
+sensor access.
+
+**From source:**
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-Optional flag: `python main.py --interval 2` starts at a 2-second cadence.
+Optional flags: `python main.py --interval 2` starts at a 2-second cadence;
+`python main.py --version` prints the version.
 
 ## Getting real temperatures on Windows
 
@@ -24,18 +32,36 @@ Optional flag: `python main.py --interval 2` starts at a 2-second cadence.
 Windows — nothing in pure Python can. Vitals gets them from
 **LibreHardwareMonitorLib.dll**, the same engine HWiNFO-class tools use.
 
-1. Download the latest LibreHardwareMonitor release zip from its GitHub
-   releases page.
-2. Copy `LibreHardwareMonitorLib.dll` **and** `HidSharp.dll` into a `lib/`
-   folder next to `sensors.py`. (Or point the `LHM_DLL` environment variable at
-   the DLL.)
-3. Run your terminal **as administrator** — the library loads a kernel driver to
-   read MSRs and SMBus. Without admin you still get load, clocks-via-psutil,
-   memory, disks and network, but the temperature tiles stay blank and the
-   header shows a warning.
+The DLL isn't checked into this repo (it's a third-party binary — see
+`.gitignore`), so **the first time you run `python main.py` with no `lib/`
+folder, Vitals downloads it automatically** from LibreHardwareMonitor's GitHub
+release, in the background, on the sampler thread — no setup step, no
+blocking the UI. The sidebar shows "fetching sensor library…" while that
+happens. If you'd rather do it yourself (offline install, corporate proxy,
+etc.), `get-lhm.ps1` does the same thing from NuGet, or you can copy
+`LibreHardwareMonitorLib.dll` and `HidSharp.dll` into `lib/` by hand (or point
+the `LHM_DLL` environment variable at the DLL).
+
+Either way, run your terminal **as administrator** — the library loads a
+kernel driver to read MSRs and SMBus. Without admin you still get load,
+clocks-via-psutil, memory, disks and network, but the temperature tiles stay
+blank and the header shows a warning. Note: if Windows **Memory Integrity /
+Core Isolation** is turned on, it blocks that kernel driver outright even when
+elevated — CPU temperature/clock/power will stay blank (GPU and disk temps
+are unaffected, they don't need it) until you disable Memory Integrity in
+Windows Security and reboot.
 
 Without the DLL the app runs fine, just with fewer sensors. On Linux it reads
 `/sys` sensors through psutil and needs no extra setup.
+
+## CPU affinity
+
+On launch, Vitals checks per-core load for ~150 ms and pins itself to
+whichever logical core is least busy at that moment (`psutil.Process().
+cpu_affinity()`), so it competes as little as possible with whatever else is
+running. This is a one-time decision made at startup, not continuously
+re-balanced. Check the System page for which core it picked. Not supported on
+macOS; failures there are silent and the process just runs unpinned.
 
 ## How it stays cheap
 
@@ -73,10 +99,29 @@ GPU driver). If you want it as close to free as possible, run at 2 s.
 
 ## Packaging
 
+Pushing a tag like `v1.0.1` triggers `.github/workflows/release.yml`, which
+builds this and attaches the zip to a new GitHub Release automatically. To
+build locally instead:
+
 ```bash
 pip install pyinstaller
-pyinstaller --noconsole --onefile --add-data "lib;lib" main.py
+pyinstaller --noconsole --onedir --noupx --uac-admin --name Vitals --add-data "lib;lib" main.py
 ```
 
-The exe needs to run elevated for the same reason the script does. Add a
-`uac-admin` manifest, or just right-click → Run as administrator.
+`--uac-admin` embeds a manifest so Windows prompts for elevation on launch,
+for the same reason the script needs an admin terminal. `--onedir` (a folder)
+rather than `--onefile` (a self-extracting single exe) is deliberate:
+`--onefile`'s runtime self-extraction is one of the most common patterns
+antivirus heuristics flag as dropper-like behavior in unsigned indie builds,
+and `--onedir` avoids it. Zip the whole `dist/Vitals/` folder to distribute it
+— the exe needs its `_internal` folder alongside it.
+
+If Defender or a friend's antivirus still flags the build, that's a
+false-positive review at https://www.microsoft.com/en-us/wdsi/filesubmission,
+not a bug here. For a durable fix, [SignPath.io](https://signpath.io) issues
+free code-signing certificates to open-source projects — a signed build is
+trusted far more readily by both Defender and SmartScreen.
+
+## License
+
+[MIT](LICENSE)

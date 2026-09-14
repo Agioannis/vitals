@@ -108,6 +108,36 @@ _SENSOR_UNITS = {
     "Noise": ("dBA", "misc"),
 }
 
+LHM_RELEASE_ZIP = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/latest/download/LibreHardwareMonitor.zip"
+
+
+def _lib_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "lib")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
+
+
+def _fetch_lhm_dlls(lib_dir: str) -> bool:
+    """Best-effort download of LibreHardwareMonitor's DLLs straight from its
+    GitHub release into lib_dir. Runs on the sampler thread, so a slow or
+    failed download never blocks the UI. Returns True on success."""
+    import io
+    import urllib.request
+    import zipfile
+    try:
+        os.makedirs(lib_dir, exist_ok=True)
+        with urllib.request.urlopen(LHM_RELEASE_ZIP, timeout=30) as resp:
+            data = resp.read()
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for name in zf.namelist():
+                if name.lower().endswith(".dll") and "/" not in name:
+                    with zf.open(name) as src, open(os.path.join(lib_dir, name), "wb") as dst:
+                        dst.write(src.read())
+        return os.path.isfile(os.path.join(lib_dir, "LibreHardwareMonitorLib.dll"))
+    except Exception:
+        return False
+
+
 _HW_GROUP = {
     "Cpu": "CPU",
     "GpuNvidia": "GPU",
@@ -538,8 +568,20 @@ class Sampler(threading.Thread):
                                  if is_admin() else
                                  "psutil + LHM (run as admin for full sensors)")
         except FileNotFoundError as exc:
+            self.backend_note = "fetching sensor library…"
+            if _fetch_lhm_dlls(_lib_dir()):
+                try:
+                    self._lhm = LibreHardwareBackend()
+                    self.backend_note = ("psutil + LibreHardwareMonitor"
+                                         if is_admin() else
+                                         "psutil + LHM (run as admin for full sensors)")
+                    return
+                except Exception as exc2:
+                    self.lhm_error = f"{type(exc2).__name__}: {exc2}"
+                    self.backend_note = f"psutil only — LHM failed to load after download ({type(exc2).__name__})"
+                    return
             self.lhm_error = str(exc)
-            self.backend_note = "psutil only — LibreHardwareMonitorLib.dll not found in lib/"
+            self.backend_note = "psutil only — couldn't download LibreHardwareMonitorLib.dll (check connection)"
         except Exception as exc:
             self.lhm_error = f"{type(exc).__name__}: {exc}"
             self.backend_note = f"psutil only — LHM failed to load ({type(exc).__name__})"
@@ -569,6 +611,21 @@ class Sampler(threading.Thread):
             if v is not None:
                 self._history[k].append(v)
         self._published = snap
+
+
+def pin_to_idle_core() -> Optional[int]:
+    """Best-effort: pin this whole process to whichever logical core is least
+    loaded right now, so the monitor competes as little as possible with
+    whatever else is running. Not supported on macOS; any failure is silent."""
+    try:
+        psutil.cpu_percent(percpu=True)
+        time.sleep(0.15)
+        loads = psutil.cpu_percent(percpu=True)
+        idx = min(range(len(loads)), key=loads.__getitem__)
+        psutil.Process().cpu_affinity([idx])
+        return idx
+    except Exception:
+        return None
 
 
 def _fallback_cpu_name() -> str:
